@@ -37,30 +37,30 @@ class TbbFunctor {
 
 public:
   double my_val_;
+  const array<double, 2> bounds_;
+  const double dx_;
 
   TbbFunctor(const array<double, 2> bounds,
              const unsigned long cIntervals) 
-    : my_val_(0)
+   :  my_val_(0),
       bounds_(bounds),
-      dx_((bounds[1] - bounds[0]) / cIntervals),
+      dx_((bounds[1] - bounds[0]) / cIntervals)
   { }
 
   TbbFunctor(TbbFunctor & other,
              tbb::split) 
-    : my_val_(0)
+    : my_val_(0),
       bounds_(other.bounds_),
-      cIntervals_(other.cIntervals_),
-      dx_(other.dx_),
+      dx_(other.dx_)
   { }
 
   void operator()(const tbb::blocked_range<size_t> & range) {
-    const unsigned long cIntervals = cIntervals_;
     const array<double, 2> rgEdge = bounds_;
-    const dx = dx_
+    const double dx = dx_;
     double val = my_val_;
    
     for (unsigned int iInt = range.begin(); iInt != range.end(); ++iInt) {
-      const double evaluationPoint = bounds[0] + (double(iInt) + 0.5) * dx;
+      const double evaluationPoint = rgEdge[0] + (double(iInt) + 0.5) * dx;
       val += std::sin(evaluationPoint);
     }
     my_val_ = val;
@@ -70,9 +70,6 @@ public:
 
 private:
   TbbFunctor();
-  const array<double, 2> bounds_;
-  const unsigned long cIntervals_;
-  const double dx_;
 
 };
 
@@ -200,13 +197,14 @@ int main(int argc, char* argv[]) {
     // dispatch threads
     parallel_reduce(tbb::blocked_range<size_t>(0, numberOfIntervals),
                     tbbFunctor);
+
+    const double threadedIntegral = tbbFunctor.my_val_ * dx;
+
     // stop timing
     toc = high_resolution_clock::now();
     const double threadedElapsedTime =
       duration_cast<duration<double> >(toc - tic).count();
 
-    // somehow get the threaded integral answer
-    const double threadedIntegral = tbbFunctor.my_val_ * dx;
     // check the answer
     const double threadedRelativeError =
       std::abs(libraryAnswer - threadedIntegral) / std::abs(libraryAnswer);
@@ -238,13 +236,25 @@ int main(int argc, char* argv[]) {
   for (const unsigned int numberOfThreads :
          numberOfThreadsArray) {
 
-    // TODO: set the number of threads for openmp
+    omp_set_num_threads(numberOfThreads);
 
     // start timing
     tic = high_resolution_clock::now();
 
+    // Do OpenMP calculation
     double threadedIntegral = 0;
-    // TODO: do scalar integration with threads on openmp
+
+    #pragma omp parallel for reduction(+:threadedIntegral)
+    for (unsigned int intervalIndex = 0;
+         intervalIndex < numberOfIntervals; ++intervalIndex) {
+
+        const double evaluationPoint =
+             bounds[0] + (double(intervalIndex) + 0.5) * dx;
+    
+        threadedIntegral += std::sin(evaluationPoint);
+    }
+
+    threadedIntegral *= dx;
 
     // stop timing
     toc = high_resolution_clock::now();
