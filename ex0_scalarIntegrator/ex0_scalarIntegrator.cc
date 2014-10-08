@@ -34,23 +34,45 @@ using std::chrono::duration;
 using std::chrono::duration_cast;
 
 class TbbFunctor {
+
 public:
+  double my_val_;
 
-  TbbFunctor(const array<double, 2> bounds) {
-  }
+  TbbFunctor(const array<double, 2> bounds,
+             const unsigned long cIntervals) 
+    : my_val_(0)
+      bounds_(bounds),
+      dx_((bounds[1] - bounds[0]) / cIntervals),
+  { }
 
-  TbbFunctor(const TbbFunctor & other,
-             tbb::split) {
-  }
+  TbbFunctor(TbbFunctor & other,
+             tbb::split) 
+    : my_val_(0)
+      bounds_(other.bounds_),
+      cIntervals_(other.cIntervals_),
+      dx_(other.dx_),
+  { }
 
   void operator()(const tbb::blocked_range<size_t> & range) {
+    const unsigned long cIntervals = cIntervals_;
+    const array<double, 2> rgEdge = bounds_;
+    const dx = dx_
+    double val = my_val_;
+   
+    for (unsigned int iInt = range.begin(); iInt != range.end(); ++iInt) {
+      const double evaluationPoint = bounds[0] + (double(iInt) + 0.5) * dx;
+      val += std::sin(evaluationPoint);
+    }
+    my_val_ = val;
   }
 
-  void join(const TbbFunctor & other) {
-  }
+  void join(const TbbFunctor & other) { my_val_ += other.my_val_; }
 
 private:
   TbbFunctor();
+  const array<double, 2> bounds_;
+  const unsigned long cIntervals_;
+  const double dx_;
 
 };
 
@@ -171,12 +193,12 @@ int main(int argc, char* argv[]) {
     tbb::task_scheduler_init init(numberOfThreads);
 
     // prepare the tbb functor.
-    TbbFunctor tbbFunctor(bounds);
+    TbbFunctor tbbFunctor(bounds, dx);
 
     // start timing
     tic = high_resolution_clock::now();
     // dispatch threads
-    parallel_reduce(tbb::blocked_range<size_t>(0, 0),
+    parallel_reduce(tbb::blocked_range<size_t>(0, numberOfIntervals),
                     tbbFunctor);
     // stop timing
     toc = high_resolution_clock::now();
@@ -184,7 +206,7 @@ int main(int argc, char* argv[]) {
       duration_cast<duration<double> >(toc - tic).count();
 
     // somehow get the threaded integral answer
-    const double threadedIntegral = 0;
+    const double threadedIntegral = tbbFunctor.my_val_ * dx;
     // check the answer
     const double threadedRelativeError =
       std::abs(libraryAnswer - threadedIntegral) / std::abs(libraryAnswer);
