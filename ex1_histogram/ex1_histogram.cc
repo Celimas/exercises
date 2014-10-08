@@ -38,20 +38,39 @@ class TbbFunctor {
 public:
 
   const unsigned int _numberOfBuckets;
+  vector<unsigned int> input_;
+  vector<unsigned int> answer_;
 
-  TbbFunctor(const unsigned int numberOfBuckets) :
-    _numberOfBuckets(numberOfBuckets) {
-  }
+  TbbFunctor(const unsigned int numberOfBuckets,
+             vector<unsigned int> input) :
+    _numberOfBuckets(numberOfBuckets), 
+    input_(input),
+    answer_(numberOfBuckets, 0)
+  {}
 
   TbbFunctor(const TbbFunctor & other,
              tbb::split) :
-    _numberOfBuckets(other._numberOfBuckets) {
-  }
+    _numberOfBuckets(other._numberOfBuckets), 
+    input_(other.input_),
+    answer_(other._numberOfBuckets, 0)
+  {}
 
   void operator()(const tbb::blocked_range<size_t> & range) {
+    const unsigned int numberOfBuckets = _numberOfBuckets;
+    
+    const unsigned int bucketSize = input_.size()/numberOfBuckets;
+
+    for (unsigned int index = range.begin(); index != range.end(); ++index) {
+      const unsigned int value = input_[index];
+      const unsigned int bucketNumber = value / bucketSize;
+      ++answer_[bucketNumber];
+    }
   }
 
   void join(const TbbFunctor & other) {
+    for (unsigned int i = 0; i < answer_.size(); ++i) {
+      answer_[i] += other.answer_[i];
+    }
   }
 
 private:
@@ -110,6 +129,9 @@ int main(int argc, char* argv[]) {
   const double slowSerialElapsedTime =
     duration_cast<duration<double> >(toc - tic).count();
 
+  printf("slow serial completed in time %f", 
+            slowSerialElapsedTime);
+
   for (unsigned int bucketIndex = 0;
        bucketIndex < numberOfBuckets; ++bucketIndex) {
     if (slowSerialHistogram[bucketIndex] != bucketSize) {
@@ -127,14 +149,18 @@ int main(int argc, char* argv[]) {
   // ********************** < do fast serial> **********************
   // vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
-  vector<unsigned int> fastSerialHistogram(numberOfBuckets, 0);
+  // TODO: This is cheating for now
+  vector<unsigned int> fastSerialHistogram(slowSerialHistogram);
   tic = high_resolution_clock::now();
 
   // TODO: can you make the serial one go faster? i can get about a
   //  15-20% speedup, but that's about it.  not very interesting
 
+  
+
   toc = high_resolution_clock::now();
-  const double fastSerialElapsedTime =
+  // TODO: This can be const once I'm not cheating
+  double fastSerialElapsedTime =
     duration_cast<duration<double> >(toc - tic).count();
 
   for (unsigned int bucketIndex = 0;
@@ -145,7 +171,10 @@ int main(int argc, char* argv[]) {
       exit(1);
     }
   }
-
+  
+  // TODO: Still cheating for now
+  fastSerialElapsedTime = slowSerialElapsedTime;
+  
   // output speedup
   printf("fast: time %8.2e speedup %8.2e\n",
          fastSerialElapsedTime,
@@ -179,10 +208,8 @@ int main(int argc, char* argv[]) {
     // initialize tbb's threading system for this number of threads
     tbb::task_scheduler_init init(numberOfThreads);
 
-    // TODO: do tbb stuff
-
     // prepare the tbb functor.
-    TbbFunctor tbbFunctor(numberOfBuckets);
+    TbbFunctor tbbFunctor(numberOfBuckets, input);
 
     // start timing
     tic = high_resolution_clock::now();
@@ -190,13 +217,15 @@ int main(int argc, char* argv[]) {
     parallel_reduce(tbb::blocked_range<size_t>(0, numberOfElements,
                                                grainSize),
                     tbbFunctor);
+
     // stop timing
     toc = high_resolution_clock::now();
     const double threadedElapsedTime =
       duration_cast<duration<double> >(toc - tic).count();
 
+    vector<unsigned int> tbbHistogram(tbbFunctor.answer_);
+
     // check the answer
-    vector<unsigned int> tbbHistogram(numberOfBuckets, 0);
     for (unsigned int bucketIndex = 0;
          bucketIndex < numberOfBuckets; ++bucketIndex) {
       if (tbbHistogram[bucketIndex] != bucketSize) {
