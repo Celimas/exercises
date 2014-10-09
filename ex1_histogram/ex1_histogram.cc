@@ -262,12 +262,28 @@ int main(int argc, char* argv[]) {
     omp_set_num_threads(numberOfThreads);
 
     vector<unsigned int> ompHistogram(numberOfBuckets, 0);
+    vector<unsigned int> my_ompHistogram;
 
     // start timing
     tic = high_resolution_clock::now();
 
-    // TODO: do openmp
+    #pragma omp parallel private(my_ompHistogram) shared(ompHistogram)
+    {
+      my_ompHistogram.assign(numberOfBuckets, 0);
+     
+      #pragma omp for
+      for (unsigned int index = 0; index < numberOfElements; ++index) {
+        const unsigned int value = input[index];
+        const unsigned int bucketNumber = value / bucketSize;
+        ++my_ompHistogram[bucketNumber];
+      }
 
+      #pragma omp critical
+      for (unsigned int i = 0; i < numberOfBuckets; ++i)
+      {
+        ompHistogram[i] += my_ompHistogram[i];
+      }
+    }
     // stop timing
     toc = high_resolution_clock::now();
     const double threadedElapsedTime =
