@@ -99,13 +99,35 @@ class TbbFunctorNaive {
 public:
 
   const unsigned int _matrixSize;
+  RowMajorMatrix* _pLeftMatrix;
+  ColMajorMatrix* _pRightMatrix;
+  RowMajorMatrix* _pAnswer;
 
-  TbbFunctorNaive(const unsigned int matrixSize) :
-    _matrixSize(matrixSize) {
-  }
+  TbbFunctorNaive(const unsigned int matrixSize,
+                  RowMajorMatrix* pLeftMatrix,
+                  ColMajorMatrix* pRightMatrix,
+                  RowMajorMatrix* pAnswer) :
+    _matrixSize(matrixSize),
+    _pLeftMatrix(pLeftMatrix),
+    _pRightMatrix(pRightMatrix),
+    _pAnswer(pAnswer)
+  { /* Nothing to be done */ }
 
   void operator()(const tbb::blocked_range<size_t> & range) const {
-    // TODO: something!
+    const unsigned int matrixSize = _matrixSize; 
+    RowMajorMatrix* leftMatrix = _pLeftMatrix;
+    ColMajorMatrix* rightMatrix = _pRightMatrix;
+    RowMajorMatrix* resultMatrix = _pAnswer;   
+
+    for (unsigned int row = range.begin(); row != range.end(); ++row) {
+      for (unsigned int col = 0; col < matrixSize; ++col) {
+        (*resultMatrix)(row, col) = 0;
+        for (unsigned int dummy = 0; dummy < matrixSize; ++dummy) {
+          (*resultMatrix)(row, col) +=
+            (*leftMatrix)(row, dummy) * (*rightMatrix)(dummy, col);
+        }
+      }
+    }
   }
 
 private:
@@ -234,7 +256,8 @@ int main(int argc, char* argv[]) {
   // ********************** </do cache unfriendly> *****************
   // ===============================================================
 
-  resultMatrix.fill(0);
+  // TODO: Uncomment when doing smart
+  // resultMatrix.fill(0);
 
   // ===============================================================
   // ********************** < do cache friendly> *******************
@@ -258,6 +281,7 @@ int main(int argc, char* argv[]) {
       cacheFriendlyCheckSum += resultMatrix(row, col);
     }
   }
+
   sprintf(methodName, "cache friendly");
   if (std::abs(cacheUnfriendlyCheckSum - cacheFriendlyCheckSum) / cacheUnfriendlyCheckSum < 1e-3) {
     printf("%-38s : time %6.2f speedup w.r.t. unfriendly %6.2f\n",
@@ -287,13 +311,17 @@ int main(int argc, char* argv[]) {
     tbb::task_scheduler_init init(numberOfThreads);
 
     // prepare the tbb functor.
-    const TbbFunctorNaive tbbFunctor(matrixSize);
+    const TbbFunctorNaive tbbFunctor(matrixSize, 
+                                     &leftMatrix, 
+                                     &rightMatrixCol,
+                                     &resultMatrix);
 
     // start timing
     tic = high_resolution_clock::now();
+    
     for (unsigned int repeatIndex = 0;
          repeatIndex < numberOfRepeats; ++repeatIndex) {
-      // TODO: dispatch threads
+         parallel_for(tbb::blocked_range<size_t>(0, matrixSize), tbbFunctor);
     }
     // stop timing
     toc = high_resolution_clock::now();
@@ -343,7 +371,16 @@ int main(int argc, char* argv[]) {
 
     for (unsigned int repeatIndex = 0;
          repeatIndex < numberOfRepeats; ++repeatIndex) {
-      // TODO: do openmp
+      #pragma omp parallel for
+      for (unsigned int row = 0; row < matrixSize; ++row) {
+        for (unsigned int col = 0; col < matrixSize; ++col) {
+          resultMatrix(row, col) = 0;
+          for (unsigned int dummy = 0; dummy < matrixSize; ++dummy) {
+            resultMatrix(row, col) +=
+              leftMatrix(row, dummy) * rightMatrixCol(dummy, col);
+          }
+        }
+      }
     }
 
     // stop timing
