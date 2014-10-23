@@ -156,7 +156,32 @@ public:
   }
 
   void operator()(const tbb::blocked_range<size_t> & range) const {
-    // TODO: something!
+    double tilePosLeft, tilePosRight, tilePosResult, posLeft, posRight, posResult;
+    const unsigned int matrixSize = _matrixSize;
+    const unsigned int tileSize = _tileSize;
+    const unsigned int tilesPerDim = matrixSize / tileSize;
+
+    for (unsigned int xTile = range.begin(); xTile != range.end(); ++xTile) {
+      for (unsigned int yTile = 0; yTile < tilesPerDim; ++yTile) {
+        // Top left corners of tiles
+        tilePosResult = yTile * tileSize * matrixSize + xTile * tileSize;
+        for (unsigned int dummyTile = 0; dummyTile < tilesPerDim; ++dummyTile) {
+          tilePosLeft = yTile * tileSize * matrixSize + dummyTile * tileSize;
+          tilePosRight = dummyTile * tileSize * matrixSize + xTile * tileSize;
+          for (unsigned int x = 0; x < tileSize; ++x) {
+            for (unsigned int y = 0; y < tileSize; ++y) {
+              posResult = tilePosResult + y * matrixSize + x;
+              for (unsigned int dummy = 0; dummy < tileSize; ++dummy) {
+                posLeft = tilePosLeft + dummy * matrixSize + x;
+                posRight = tilePosRight + y * matrixSize + dummy;
+                (*_tiledResultMatrix)[posResult] +=
+                    (*_tiledLeftMatrix)[posLeft] * (*_tiledRightMatrix)[posRight];
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
 private:
@@ -186,7 +211,7 @@ int main(int argc, char* argv[]) {
 
   // a couple of inputs.  change the numberOfIntervals to control the amount
   //  of work done
-  const unsigned int matrixSize = 512 * 3;
+  const unsigned int matrixSize = 512 * 4;
   const unsigned int numberOfRepeats = 1;
 
   // we will repeat the computation for each of the numbers of threads
@@ -256,8 +281,7 @@ int main(int argc, char* argv[]) {
   // ********************** </do cache unfriendly> *****************
   // ===============================================================
 
-  // TODO: Uncomment when doing smart
-  // resultMatrix.fill(0);
+  resultMatrix.fill(0);
 
   // ===============================================================
   // ********************** < do cache friendly> *******************
@@ -268,7 +292,15 @@ int main(int argc, char* argv[]) {
 
   for (unsigned int repeatIndex = 0;
        repeatIndex < numberOfRepeats; ++repeatIndex) {
-    // TODO: do cache-friendly multiplication
+    for (unsigned int row = 0; row < matrixSize; ++row) {
+      for (unsigned int col = 0; col < matrixSize; ++col) {
+        resultMatrix(row, col) = 0;
+        for (unsigned int dummy = 0; dummy < matrixSize; ++dummy) {
+          resultMatrix(row, col) +=
+            leftMatrix(row, dummy) * rightMatrixCol(dummy, col);
+        }
+      }
+    }
   }
 
   toc = high_resolution_clock::now();
@@ -588,28 +620,70 @@ int main(int argc, char* argv[]) {
   // ********************** < do tiled> ****************************
   // vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
-  //const vector<unsigned int> tileSizes = {16, 32, 64};
-  const vector<unsigned int> tileSizes = {};
+  const vector<unsigned int> tileSizes = {16, 32, 64, 128};
+  //const vector<unsigned int> tileSizes = {};
 
   for (const unsigned int tileSize : tileSizes) {
+    unsigned int tilesPerDim = matrixSize/tileSize;
+
+    if (matrixSize % tileSize != 0) {
+        printf("Tile size (%d) doesn't divide matrix size (%d).",
+                tileSize, matrixSize);
+    }
 
     vector<double> tiledLeftMatrix(matrixSize * matrixSize,
                                    std::numeric_limits<double>::quiet_NaN());
     vector<double> tiledRightMatrix(matrixSize * matrixSize,
                                     std::numeric_limits<double>::quiet_NaN());
     vector<double> tiledResultMatrix(matrixSize * matrixSize, 0);
-    // TODO: form left matrix
-    // TODO: form right matrix
+
+    // Not worth adding begin and end to RowMatrix struct right now...
+    std::copy(leftMatrix._data.begin(), 
+              leftMatrix._data.end(), 
+              tiledLeftMatrix.begin());
+
+    std::copy(rightMatrixRow._data.begin(), 
+              rightMatrixRow._data.end(), 
+              tiledRightMatrix.begin());
 
     // ===============================================================
     // ********************** < do vanilla tiled> ********************
     // vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
-    double tiledElapsedTime = 0;
+    tic = high_resolution_clock::now();
+
+    unsigned int tilePosLeft, tilePosRight, tilePosResult;
+    unsigned int posLeft, posRight, posResult;
     for (unsigned int repeatIndex = 0;
          repeatIndex < numberOfRepeats; ++repeatIndex) {
-      // TODO: do tiled matrix multiplication
+      for (unsigned int xTile = 0; xTile < tilesPerDim; ++xTile) {
+        for (unsigned int yTile = 0; yTile < tilesPerDim; ++yTile) {
+          // Top left corners of tiles
+          tilePosResult = yTile * tileSize * matrixSize + xTile * tileSize;
+          for (unsigned int dummyTile = 0; dummyTile < tilesPerDim; ++dummyTile) {
+            tilePosLeft = yTile * tileSize * matrixSize + dummyTile * tileSize;
+            tilePosRight = dummyTile * tileSize * matrixSize + xTile * tileSize;
+            for (unsigned int x = 0; x < tileSize; ++x) {
+              for (unsigned int y = 0; y < tileSize; ++y) {
+                posResult = tilePosResult + y * matrixSize + x;
+                for (unsigned int dummy = 0; dummy < tileSize; ++dummy) {
+                  posLeft = tilePosLeft + dummy * matrixSize + x;
+                  posRight = tilePosRight + y * matrixSize + dummy;
+                  tiledResultMatrix[posResult] +=
+                      tiledLeftMatrix[posLeft] * tiledRightMatrix[posRight];
+                }
+              }
+            }
+          }
+        }
+      }
     }
+
+    toc = high_resolution_clock::now();
+
+    const double tiledElapsedTime =
+      duration_cast<duration<double> >(toc - tic).count();
+    
     // check the answer
     double tiledCheckSum = 0;
     for (const double entry : tiledResultMatrix) {
@@ -650,13 +724,18 @@ int main(int argc, char* argv[]) {
                                        &tiledLeftMatrix,
                                        &tiledRightMatrix,
                                        &tiledResultMatrix);
-
-      double tbbElapsedTime = 0;
+      // start timing
+      tic = high_resolution_clock::now();
+    
       for (unsigned int repeatIndex = 0;
            repeatIndex < numberOfRepeats; ++repeatIndex) {
-        // TODO: something!
+           parallel_for(tbb::blocked_range<size_t>(0, tilesPerDim), tbbFunctor);
       }
-
+      // stop timing
+      toc = high_resolution_clock::now();
+      const double tbbElapsedTime =
+        duration_cast<duration<double> >(toc - tic).count();
+      
       // check the answer
       double tbbCheckSum = 0;
       for (const double entry : tiledResultMatrix) {
@@ -692,12 +771,40 @@ int main(int argc, char* argv[]) {
 
       omp_set_num_threads(numberOfThreads);
 
-      double ompElapsedTime = 0;
+      tic = high_resolution_clock::now();
+
+      unsigned int tilePosLeft, tilePosRight, tilePosResult;
+      unsigned int posLeft, posRight, posResult;
       for (unsigned int repeatIndex = 0;
            repeatIndex < numberOfRepeats; ++repeatIndex) {
-        // TODO: something!
+        #pragma omp parallel for
+        for (unsigned int xTile = 0; xTile < tilesPerDim; ++xTile) {
+          for (unsigned int yTile = 0; yTile < tilesPerDim; ++yTile) {
+            // Top left corners of tiles
+            tilePosResult = yTile * tileSize * matrixSize + xTile * tileSize;
+            for (unsigned int dummyTile = 0; dummyTile < tilesPerDim; ++dummyTile) {
+              tilePosLeft = yTile * tileSize * matrixSize + dummyTile * tileSize;
+              tilePosRight = dummyTile * tileSize * matrixSize + xTile * tileSize;
+              for (unsigned int x = 0; x < tileSize; ++x) {
+                for (unsigned int y = 0; y < tileSize; ++y) {
+                  posResult = tilePosResult + y * matrixSize + x;
+                  for (unsigned int dummy = 0; dummy < tileSize; ++dummy) {
+                    posLeft = tilePosLeft + dummy * matrixSize + x;
+                    posRight = tilePosRight + y * matrixSize + dummy;
+                    tiledResultMatrix[posResult] +=
+                        tiledLeftMatrix[posLeft] * tiledRightMatrix[posRight];
+                  }
+                }
+              }
+            }
+          }
+        }
       }
 
+      toc = high_resolution_clock::now();
+
+      const double ompElapsedTime =
+        duration_cast<duration<double> >(toc - tic).count();
 
       double ompCheckSum = 0;
       for (const double entry : tiledResultMatrix) {
