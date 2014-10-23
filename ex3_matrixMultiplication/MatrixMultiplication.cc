@@ -189,17 +189,40 @@ private:
 
 };
 
+typedef Kokkos::View<double **> matrixView_t;
 struct KokkosFunctor {
 
   const unsigned int _matrixSize;
+  matrixView_t _leftInput;
+  matrixView_t _rightInput;
+  matrixView_t _result;
 
-  KokkosFunctor(const unsigned int matrixSize) :
-    _matrixSize(matrixSize) {
+  KokkosFunctor(const unsigned int matrixSize,
+                matrixView_t leftInput,
+                matrixView_t rightInput,
+                matrixView_t result) :
+    _matrixSize(matrixSize),
+    _leftInput(leftInput),
+    _rightInput(rightInput),
+    _result(result) 
+  {
+    // Nothing to do
   }
 
   KOKKOS_INLINE_FUNCTION
   void operator()(const unsigned int elementIndex) const {
-    // TODO: something!
+    double sum;
+
+    for (unsigned int col = 0; col < _matrixSize; ++col) {
+      sum = 0;
+
+      for (unsigned int dummy = 0; dummy < _matrixSize; ++dummy) {
+        sum += _leftInput(elementIndex, dummy) * _rightInput(dummy, col);
+      }
+
+      _result(elementIndex, col) = sum;
+    }
+
   }
 
 private:
@@ -520,14 +543,14 @@ int main(int argc, char* argv[]) {
 
   Kokkos::initialize();
 
-  //printf("kokkos is running on %s\n", typeid(Kokkos::DefaultExecutionSpace).name());
+  printf("kokkos is running on %s\n", typeid(Kokkos::DefaultExecutionSpace).name());
 
   // start timing
   tic = high_resolution_clock::now();
 
   for (unsigned int repeatIndex = 0;
        repeatIndex < numberOfRepeats; ++repeatIndex) {
-    // TODO: do kokkos calculation
+    // TODO: do kokkos parallel for
   }
 
   // stop timing
