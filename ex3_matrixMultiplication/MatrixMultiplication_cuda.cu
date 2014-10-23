@@ -14,9 +14,9 @@
 __global__
 void
 cudaDoNaiveMatrixMultiplication_kernel(const unsigned int matrixSize,
-                                                   const double * leftMatrix,
-                                                   const double * rightMatrix,
-                                                   double * resultMatrix) {
+                                       const double * leftMatrix,
+                                       const double * rightMatrix,
+                                       double * resultMatrix) {
   // TODO: something!
 }
 
