@@ -20,10 +20,10 @@ ifeq ($(UNAME_S),Darwin)
   #CC_FLAGS        += -mavx -Wa,-q
 else
   # compiler
-  CC              := g++
+  CC              := g++-4.7.3
   # cuda (use first for shuffler, second for shadowfax)
-  CUDA_PATH       ?= /usr/local/cuda-6.5
-  # CUDA_PATH       ?= /opt/cuda
+  # CUDA_PATH       ?= /usr/local/cuda-6.5
+  CUDA_PATH       ?= /opt/cuda
   CUDA_LIB_PATH   ?= $(CUDA_PATH)/lib64/
   ifeq ($(OS_SIZE),32)
     CC_FLAGS      += -m32
